@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Smart City — Traffic / Alerts / Overview</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root{--bg:#071427;--panel:#0b1220;--muted:#9aa4b2;--accent:#00d4ff;--glass:rgba(255,255,255,0.03);--card-radius:12px}
+    *{box-sizing:border-box}html,body{height:100%;margin:0;font-family:Inter,Arial,sans-serif;background:linear-gradient(180deg,#05101b, #081726);color:#dbe7f0}
+    .app{display:grid;grid-template-columns:250px 1fr;gap:20px;padding:20px;height:100vh}
+
+    /* SIDEBAR */
+    .sidebar{background:var(--panel);border-radius:var(--card-radius);padding:18px;display:flex;flex-direction:column;gap:12px}
+    .logo{display:flex;align-items:center;gap:12px}
+    .logo .avatar{width:44px;height:44px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#7b61ff);display:flex;align-items:center;justify-content:center;font-weight:700}
+    .nav{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+    .nav button{background:transparent;border:0;color:var(--muted);padding:10px;border-radius:8px;text-align:left;cursor:pointer;transition:all .18s}
+    .nav button.active{color:#001429;background:linear-gradient(90deg,var(--accent),#7b61ff)}
+
+    /* MAIN */
+    .main{display:flex;flex-direction:column;gap:12px}
+    .topbar{display:flex;justify-content:space-between;align-items:center}
+    .topbar .title{font-size:18px;font-weight:700}
+    .controls{display:flex;gap:8px;align-items:center}
+    .btn{background:linear-gradient(90deg,#0ea5e9,#7b61ff);border:0;color:#001429;padding:8px 12px;border-radius:8px;cursor:pointer}
+    .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted)}
+
+    /* PAGES */
+    .pages{flex:1;display:flex;position:relative}
+    .page{position:absolute;inset:0;padding:12px;opacity:0;pointer-events:none;transform:translateY(8px);transition:all .35s ease}
+    .page.active{opacity:1;pointer-events:auto;transform:none}
+
+    /* Grid inside pages */
+    .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+    .card{background:var(--glass);padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.03)}
+    .card h3{margin:0 0 8px 0;color:var(--muted)}
+    .metric{font-weight:800;font-size:20px}
+
+    /* Map */
+    #map{height:420px;border-radius:10px;overflow:hidden}
+
+    /* alerts */
+    .alerts{display:flex;flex-direction:column;gap:8px}
+    .alert{padding:10px;border-radius:8px;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);display:flex;justify-content:space-between}
+    .severity-high{border-left:4px solid #ff6b6b}
+    .severity-medium{border-left:4px solid #ffb86b}
+    .severity-low{border-left:4px solid #00f5a0}
+
+    /* settings modal */
+    .settings{position:fixed;right:20px;bottom:20px;background:var(--panel);padding:14px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);box-shadow:0 12px 48px rgba(3,6,23,0.6)}
+    .settings h4{margin:0 0 8px 0}
+    .slider{display:flex;gap:8px;align-items:center}
+    .preset-btn{padding:6px 8px;border-radius:8px;border:0;cursor:pointer}
+
+    /* footer */
+    .footer{font-size:12px;color:var(--muted);text-align:center;padding:8px}
+
+    @media (max-width:980px){.app{grid-template-columns:1fr} .grid-3{grid-template-columns:repeat(2,1fr)} }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="logo"><div class="avatar">SC</div><div><div style="font-weight:700">Smart City</div><div style="font-size:12px;color:var(--muted)">Interactive Dashboard</div></div></div>
+      <nav class="nav">
+        <button id="nav-traffic">Traffic Management</button>
+        <button id="nav-alerts">Alerts Management</button>
+        <button id="nav-overview" class="active">Overview</button>
+      </nav>
+
+      <div style="margin-top:auto">
+        <div style="font-size:12px;color:var(--muted)">Theme</div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="preset-btn" data-r="7" data-g="20" data-b="38" style="background:#071426"></button>
+          <button class="preset-btn" data-r="6" data-g="21" data-b="40" style="background:#061528"></button>
+          <button class="preset-btn" data-r="1" data-g="22" data-b="48" style="background:#011630"></button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div class="title">Smart City Dashboard</div>
+        <div class="controls">
+          <button id="openSettings" class="btn ghost">Settings</button>
+          <div id="clock" style="color:var(--muted)"></div>
+        </div>
+      </div>
+
+      <div class="pages">
+        <!-- TRAFFIC MANAGEMENT PAGE -->
+        <section id="page-traffic" class="page">
+          <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
+            <h2 style="margin:0">Traffic Management — IoT Integrations</h2>
+            <div style="color:var(--muted);font-size:13px">Real-time sensors, cameras & signals</div>
+          </div>
+
+          <div class="grid-3">
+            <div class="card">
+              <h3>Live Map</h3>
+              <div id="map"></div>
+            </div>
+            <div class="card">
+              <h3>Traffic Flow</h3>
+              <canvas id="flowChart" style="height:220px"></canvas>
+            </div>
+            <div class="card">
+              <h3>IoT Devices</h3>
+              <div id="iotList" style="max-height:320px;overflow:auto;margin-top:8px"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ALERTS MANAGEMENT PAGE -->
+        <section id="page-alerts" class="page">
+          <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
+            <h2 style="margin:0">Alerts Management — Real-time</h2>
+            <div style="color:var(--muted);font-size:13px">Prioritize & respond to incidents</div>
+          </div>
+
+          <div style="display:flex;gap:12px">
+            <div style="flex:1">
+              <div class="card" style="margin-bottom:12px">
+                <h3>Active Alerts</h3>
+                <div id="alertsList" class="alerts" style="margin-top:8px"></div>
+              </div>
+
+              <div class="card">
+                <h3>Alert Timeline</h3>
+                <canvas id="alertTimeline" style="height:180px"></canvas>
+              </div>
+            </div>
+
+            <div style="width:320px">
+              <div class="card">
+                <h3>Incident Details</h3>
+                <div id="incidentDetails" style="margin-top:8px;color:var(--muted)">Select an alert to view details</div>
+                <div style="margin-top:12px;display:flex;gap:8px">
+                  <button id="ackBtn" class="btn">Acknowledge</button>
+                  <button id="resolveBtn" class="btn ghost">Resolve</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- OVERVIEW PAGE -->
+        <section id="page-overview" class="page active">
+          <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
+            <h2 style="margin:0">Overview</h2>
+            <div style="color:var(--muted);font-size:13px">City-wide summary & KPIs</div>
+          </div>
+
+          <div class="grid-3" style="margin-bottom:12px">
+            <div class="card"><h3>Active Alerts</h3><div class="metric" id="k-alerts">0</div></div>
+            <div class="card"><h3>Avg Traffic Speed</h3><div class="metric" id="k-speed">—</div></div>
+            <div class="card"><h3>Power Usage</h3><div class="metric" id="k-power">—</div></div>
+          </div>
+
+          <div style="display:flex;gap:12px">
+            <div style="flex:1" class="card">
+              <h3>24h Traffic</h3>
+              <canvas id="overviewTraffic" style="height:180px"></canvas>
+            </div>
+            <div style="width:320px" class="card">
+              <h3>Recent Alerts</h3>
+              <div id="recentAlerts" style="margin-top:8px;max-height:260px;overflow:auto"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="footer">© Smart City Demo — Interactive Demo</div>
+    </main>
+  </div>
+
+  <!-- Settings floating panel -->
+  <div class="settings" id="settings" style="display:none">
+    <h4>Theme Settings</h4>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Adjust base RGB background</div>
+    <div class="slider"><label style="width:36px">R</label><input id="r" type="range" min="0" max="255" value="7"></div>
+    <div class="slider"><label style="width:36px">G</label><input id="g" type="range" min="0" max="255" value="20"></div>
+    <div class="slider"><label style="width:36px">B</label><input id="b" type="range" min="0" max="255" value="38"></div>
+    <div style="height:10px"></div>
+    <button id="apply" class="btn">Apply Color</button>
+    <div style="height:8px"></div>
+    <div style="font-size:12px;color:var(--muted)">Presets</div>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button class="preset-btn" data-r="7" data-g="20" data-b="38" style="background:#071426;width:40px;height:32px;border-radius:6px"></button>
+      <button class="preset-btn" data-r="2" data-g="12" data-b="30" style="background:#02122e;width:40px;height:32px;border-radius:6px"></button>
+      <button class="preset-btn" data-r="4" data-g="28" data-b="52" style="background:#041c34;width:40px;height:32px;border-radius:6px"></button>
+    </div>
+  </div>
+
+  <script>
+    // ---------- Utilities & state ----------
+    const pages = {traffic: document.getElementById('page-traffic'), alerts: document.getElementById('page-alerts'), overview: document.getElementById('page-overview')};
+    const navs = {traffic: document.getElementById('nav-traffic'), alerts: document.getElementById('nav-alerts'), overview: document.getElementById('nav-overview')};
+    function setActive(key){
+      Object.values(navs).forEach(n=>n.classList.remove('active'));
+      Object.values(pages).forEach(p=>p.classList.remove('active'));
+      navs[key].classList.add('active'); pages[key].classList.add('active');
+      // specific behaviors: when opening traffic -> initialize map/chart if needed
+      if(key==='traffic') setTimeout(()=>{ map.invalidateSize(); },300);
+    }
+
+    navs.traffic.addEventListener('click', ()=> setActive('traffic'));
+    navs.alerts.addEventListener('click', ()=> setActive('alerts'));
+    navs.overview.addEventListener('click', ()=> setActive('overview'));
+
+    // clock
+    setInterval(()=>document.getElementById('clock').textContent = new Date().toLocaleTimeString(), 1000);
+
+    // ---------- Settings panel logic ----------
+    const settingsBtn = document.getElementById('openSettings');
+    const settings = document.getElementById('settings');
+    settingsBtn.addEventListener('click', ()=> settings.style.display = settings.style.display==='none'? 'block':'none');
+    document.getElementById('apply').addEventListener('click', ()=> applyRGB());
+    function applyRGB(){
+      const r = document.getElementById('r').value;
+      const g = document.getElementById('g').value;
+      const b = document.getElementById('b').value;
+      const bg = `rgb(${r},${g},${b})`;
+      document.documentElement.style.setProperty('--bg', bg);
+      document.body.style.background = `linear-gradient(180deg, ${bg}, #081726)`;
+    }
+    document.querySelectorAll('.preset-btn').forEach(b=> b.addEventListener('click', e=>{
+      const t = e.currentTarget; document.getElementById('r').value = t.dataset.r; document.getElementById('g').value = t.dataset.g; document.getElementById('b').value = t.dataset.b; applyRGB();
+    }));
+
+    // sidebar preset quick theme
+    document.querySelectorAll('.sidebar .preset-btn').forEach(b=> b.addEventListener('click', e=>{
+      const t = e.currentTarget; document.body.style.background = `linear-gradient(180deg, rgb(${t.dataset.r},${t.dataset.g},${t.dataset.b}), #081726)`;
+    }));
+
+    // ---------- Map & traffic IoT ----------
+    const map = L.map('map',{zoomControl:true}).setView([12.9716,77.5946],12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    const sensorLayer = L.layerGroup().addTo(map);
+
+    const iotDevices = [];
+    for(let i=0;i<40;i++){
+      const lat = 12.97 + (Math.random()-0.5)*0.2; const lng = 77.59 + (Math.random()-0.5)*0.25;
+      const type = ['camera','loopSensor','signal'][Math.floor(Math.random()*3)];
+      const status = Math.random()>0.08? 'ok' : (Math.random()>0.5? 'warn':'fail');
+      const id = 'D-'+(1000+i);
+      iotDevices.push({id,type,lat,lng,status});
+    }
+
+    function drawSensors(){ sensorLayer.clearLayers(); iotDevices.forEach(d=>{
+      const color = d.status==='ok'? '#00f5a0' : d.status==='warn'? '#ffb86b' : '#ff6b6b';
+      const m = L.circleMarker([d.lat,d.lng],{radius:8,fillColor:color,color:'#000',weight:0.8,fillOpacity:0.9}).bindPopup(`<b>${d.id}</b><br>Type: ${d.type}<br>Status: ${d.status}`);
+      m.addTo(sensorLayer);
+    })}
+    drawSensors();
+
+    // iot list
+    function renderIOT(){ const el = document.getElementById('iotList'); el.innerHTML=''; iotDevices.slice(0,40).forEach(d=>{ const div = document.createElement('div'); div.style.padding='8px'; div.style.borderBottom='1px solid rgba(255,255,255,0.03)'; div.innerHTML = `<strong>${d.id}</strong> · ${d.type} · <span style="color:${d.status==='ok'? '#00f5a0': d.status==='warn'? '#ffb86b':'#ff6b6b'}">${d.status}</span>`; el.appendChild(div); }) }
+    renderIOT();
+
+    // traffic chart
+    const flowCtx = document.getElementById('flowChart').getContext('2d');
+    const labels = Array.from({length:12},(_,i)=>`${i*5}m`);
+    const flowData = labels.map(()=> Math.round(Math.random()*80)+20);
+    const flowChart = new Chart(flowCtx, {type:'bar', data:{labels, datasets:[{label:'Avg speed (km/h)', data:flowData}]}, options:{plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}}});
+
+    // overview traffic
+    const ovCtx = document.getElementById('overviewTraffic').getContext('2d');
+    const ovLabels = Array.from({length:24},(_,i)=>`${i}:00`);
+    const ovData = ovLabels.map(()=> Math.round(Math.random()*60)+20);
+    const ovChart = new Chart(ovCtx, {type:'line', data:{labels:ovLabels, datasets:[{label:'Speed', data:ovData, fill:true}]}, options:{plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}}});
+
+    // ---------- Alerts management simulation ----------
+    const alerts = [];
+    function pushAlert(type,severity,loc){ const id = 'A-'+(1000+alerts.length); const time = new Date().toLocaleTimeString(); alerts.unshift({id,type,severity,loc,time}); renderAlerts(); updateOverviewKPIs(); }
+    function renderAlerts(){ const el = document.getElementById('alertsList'); el.innerHTML=''; alerts.forEach(a=>{ const div = document.createElement('div'); div.className='alert '+(a.severity==='High'? 'severity-high': a.severity==='Medium'? 'severity-medium':'severity-low'); div.innerHTML = `<div><strong>${a.id}</strong> · ${a.type}<div style="font-size:12px;color:var(--muted)">${a.loc} • ${a.time}</div></div><div style="display:flex;flex-direction:column;gap:6px"><button class='btn' onclick="ack('${a.id}')">Ack</button><button class='btn ghost' onclick="view('${a.id}')">View</button></div>`; el.appendChild(div); })
+      // recent alerts
+      const r = document.getElementById('recentAlerts'); r.innerHTML=''; alerts.slice(0,10).forEach(a=>{ const d = document.createElement('div'); d.style.padding='8px'; d.style.borderBottom='1px solid rgba(255,255,255,0.03)'; d.innerHTML = `<strong>${a.id}</strong> — ${a.type} • ${a.severity}`; r.appendChild(d); })
+      document.getElementById('k-alerts').textContent = alerts.length;
+    }
+
+    function ack(id){ alert('Acknowledged '+id); }
+    function view(id){ const a = alerts.find(x=>x.id===id); if(!a) return; document.getElementById('incidentDetails').innerHTML = `<strong>${a.id}</strong><div style="color:var(--muted)">Type: ${a.type}<br>Severity: ${a.severity}<br>Location: ${a.loc}<br>Time: ${a.time}</div>`; setActive('alerts'); }
+
+    // timeline chart for alerts
+    const atCtx = document.getElementById('alertTimeline').getContext('2d');
+    const atLabels = Array.from({length:12},(_,i)=>i+1+'m');
+    const atData = atLabels.map(()=> Math.round(Math.random()*3));
+    const atChart = new Chart(atCtx,{type:'bar', data:{labels:atLabels, datasets:[{label:'Alerts', data:atData}]}, options:{plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}}});
+
+    // actions: ack/resolve
+    document.getElementById('ackBtn').addEventListener('click', ()=> alert('Selected alert acknowledged (demo)'));
+    document.getElementById('resolveBtn').addEventListener('click', ()=> alert('Selected alert resolved (demo)'));
+
+    // simulate alerts and traffic changes over time
+    setInterval(()=>{
+      // traffic update
+      flowData.shift(); flowData.push(Math.round(Math.random()*80)+20); flowChart.update();
+      ovData.shift(); ovData.push(Math.round(Math.random()*60)+20); ovChart.update();
+      // sometimes new alert
+      if(Math.random()>0.6){ const types = ['Accident','Congestion','Signal failure','Sensor offline']; const sev = Math.random()>0.85? 'High': Math.random()>0.6? 'Medium':'Low'; pushAlert(types[Math.floor(Math.random()*types.length)], sev, 'Sector '+Math.ceil(Math.random()*12)); atData.shift(); atData.push(Math.round(Math.random()*4)); atChart.update(); }
+      // device status random change
+      if(Math.random()>0.9){ const idx = Math.floor(Math.random()*iotDevices.length); iotDevices[idx].status = Math.random()>0.5? 'ok': (Math.random()>0.5? 'warn':'fail'); drawSensors(); renderIOT(); }
+    }, 2500);
+
+    // initialize with some alerts
+    pushAlert('Accident','High','Outer Ring Road'); pushAlert('Sensor offline','Medium','MG Road'); pushAlert('Congestion','Low','Marathahalli');
+
+    // overview KPIs
+    function updateOverviewKPIs(){ const speeds = ovData; const avg = Math.round(speeds.reduce((a,b)=>a+b,0)/speeds.length); document.getElementById('k-speed').textContent = avg + ' km/h'; document.getElementById('k-power').textContent = Math.round(Math.random()*200+50)+' MW'; }
+    updateOverviewKPIs();
+
+    // expose ack/view to inline handlers
+    window.ack = ack; window.view = view;
+
+    // responsive behavior: center map again when traffic opened
+    navs.traffic.addEventListener('click', ()=> setTimeout(()=> map.invalidateSize(), 300));
+
+    // apply initial theme vars
+    document.documentElement.style.setProperty('--bg','#071427');
+    document.documentElement.style.setProperty('--panel','#0b1220');
+    document.documentElement.style.setProperty('--accent','#00d4ff');
+
+  </script>
+</body>
+</html>
